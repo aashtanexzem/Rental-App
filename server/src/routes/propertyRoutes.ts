@@ -9,6 +9,7 @@ const upload = multer({ storage });
 
 router.get("/", getProperties);
 router.get("/:id", getProperty);
-router.post("/", authMiddleware(["manager"]), upload.array("photos"), createProperty);
+router.post("/", authMiddleware(["manager"]), 
+upload.array("photos"), createProperty);
 
 export default router;

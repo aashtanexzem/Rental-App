@@ -195,8 +195,7 @@ export const createProperty = async (
   res: Response
 ): Promise<void> => {
   try {
-    const files = (req.files as Express.Multer.File[]) || [];
-
+    const files = req.files as Express.Multer.File[];
     const {
       address,
       city,
@@ -204,102 +203,92 @@ export const createProperty = async (
       country,
       postalCode,
       managerCognitoId,
-      amenities,
-      highlights,
-      isPetsAllowed,
-      isParkingIncluded,
-      pricePerMonth,
-      securityDeposit,
-      applicationFee,
-      beds,
-      baths,
-      squareFeet,
       ...propertyData
     } = req.body;
 
-    if (!managerCognitoId || typeof managerCognitoId !== "string") {
-      console.error("managerCognitoId missing or invalid", req.body);
-      res.status(400).json({ message: "managerCognitoId is required" });
-      return;
-    }
+   /* const photoUrls = await Promise.all(
+      files.map(async (file) => {
+        const uploadParams = {
+          Bucket: process.env.S3_BUCKET_NAME!,
+          Key: properties/${Date.now()}-${file.originalname},
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        };
 
-    // ✅ Upload images to S3 and return their URLs
-    const photoUrls: string[] = (
-      await Promise.all(
-        files.map(async (file) => {
-          const uploadParams = {
-            Bucket: process.env.S3_BUCKET_NAME!,
-            Key: `properties/${Date.now()}-${file.originalname}`,
-            Body: file.buffer,
-            ContentType: file.mimetype,
-          };
+        const uploadResult = await new Upload({
+          client: s3Client,
+          params: uploadParams,
+        }).done();
 
-          const result = await new Upload({
-            client: s3Client,
-            params: uploadParams,
-          }).done();
+        return uploadResult.Location;
+      })
+    );*/
 
-          return (result as any).Location as string;
-        })
-      )
-    ).filter((url): url is string => typeof url === "string");
-
-    // ✅ Geocoding from address
-    const geocodingUrl = `https://nominatim.openstreetmap.org/search?${new URLSearchParams({
-      street: address,
-      city,
-      country,
-      postalcode: postalCode,
-      format: "json",
-      limit: "1",
-    })}`;
-
-    const geoRes = await axios.get(geocodingUrl, {
-      headers: { "User-Agent": "RealEstateApp" },
+    const geocodingUrl = `https://nominatim.openstreetmap.org/search?${new URLSearchParams(
+      {
+        street: address,
+        city,
+        country,
+        postalcode: postalCode,
+        format: "json",
+        limit: "1",
+      }
+    ).toString()}`;
+    const geocodingResponse = await axios.get(geocodingUrl, {
+      headers: {
+        "User-Agent": "RealEstateApp (justsomedummyemail@gmail.com)",
+      },
     });
+    const [longitude, latitude] =
+      geocodingResponse.data[0]?.lon && geocodingResponse.data[0]?.lat
+        ? [
+            parseFloat(geocodingResponse.data[0]?.lon),
+            parseFloat(geocodingResponse.data[0]?.lat),
+          ]
+        : [0, 0];
 
-    const [longitude, latitude] = geoRes.data[0]
-      ? [parseFloat(geoRes.data[0].lon), parseFloat(geoRes.data[0].lat)]
-      : [0, 0];
-
-    // ✅ Insert location into DB
-    const locationResult = await prisma.$queryRawUnsafe<Location[]>(`
+    // create location
+    const [location] = await prisma.$queryRaw<Location[]>`
       INSERT INTO "Location" (address, city, state, country, "postalCode", coordinates)
-      VALUES ($1, $2, $3, $4, $5, ST_SetSRID(ST_MakePoint($6, $7), 4326))
-      RETURNING *;
-    `, address, city, state, country, postalCode, longitude, latitude);
+      VALUES (${address}, ${city}, ${state}, ${country}, ${postalCode}, ST_SetSRID(ST_MakePoint(${longitude}, ${latitude}), 4326))
+      RETURNING id, address, city, state, country, "postalCode", ST_AsText(coordinates) as coordinates;
+    `;
 
-    if (!Array.isArray(locationResult) || locationResult.length === 0) {
-      throw new Error("Failed to insert location.");
-    }
-
-    const location = locationResult[0];
-
-    // ✅ Create the property
+    // create property
     const newProperty = await prisma.property.create({
       data: {
         ...propertyData,
-        photoUrls,
+        //photoUrls,
         locationId: location.id,
         managerCognitoId,
-        amenities: typeof amenities === "string" ? JSON.parse(amenities) : [],
-        highlights: typeof highlights === "string" ? JSON.parse(highlights) : [],
-        isPetsAllowed: isPetsAllowed === "true",
-        isParkingIncluded: isParkingIncluded === "true",
-        pricePerMonth: parseFloat(pricePerMonth),
-        securityDeposit: parseFloat(securityDeposit),
-        applicationFee: parseFloat(applicationFee),
-        beds: parseInt(beds),
-        baths: parseFloat(baths),
-        squareFeet: parseInt(squareFeet),
+        amenities:
+          typeof propertyData.amenities === "string"
+            ? propertyData.amenities.split(",")
+            : [],
+        highlights:
+          typeof propertyData.highlights === "string"
+            ? propertyData.highlights.split(",")
+            : [],
+        isPetsAllowed: propertyData.isPetsAllowed === "true",
+        isParkingIncluded: propertyData.isParkingIncluded === "true",
+        pricePerMonth: parseFloat(propertyData.pricePerMonth),
+        securityDeposit: parseFloat(propertyData.securityDeposit),
+        applicationFee: parseFloat(propertyData.applicationFee),
+        beds: parseInt(propertyData.beds),
+        baths: parseFloat(propertyData.baths),
+        squareFeet: parseInt(propertyData.squareFeet),
       },
-      include: { location: true, manager: true },
+      include: {
+        location: true,
+        manager: true,
+      },
     });
 
     res.status(201).json(newProperty);
   } catch (err: any) {
-    console.error("🔥 CREATE PROPERTY ERROR:", err.message, err.stack);
-    res.status(500).json({ message: `Error creating property: ${err.message}` });
-  }
+    res
+      .status(500)
+      .json({ message: `Error creating property : ${err.message} `});
+  }
 };
 
