@@ -70,7 +70,7 @@ const listApplication = (req, res) => __awaiter(void 0, void 0, void 0, function
 exports.listApplication = listApplication;
 const createApplication = (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const { applicationDate, status, propertyId, tenantCognitoId, name, email, phoneNumber, message } = req.body;
+        const { applicationDate, status, propertyId, tenantCognitoId, name, email, phoneNumber, message, } = req.body;
         const property = yield prisma.property.findUnique({
             where: { id: propertyId },
             select: { pricePerMonth: true, securityDeposit: true },
@@ -79,26 +79,22 @@ const createApplication = (req, res) => __awaiter(void 0, void 0, void 0, functi
             res.status(404).json({ message: "Property not found" });
             return;
         }
-        const newApplication = yield prisma.$transaction((prisma) => __awaiter(void 0, void 0, void 0, function* () {
-            const lease = yield prisma.lease.create({
-                data: {
-                    startDate: new Date(), //today
-                    endDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1) //1 year from today
-                    ),
-                    rent: property === null || property === void 0 ? void 0 : property.pricePerMonth,
-                    deposit: property === null || property === void 0 ? void 0 : property.securityDeposit,
-                    property: {
-                        connect: { id: propertyId },
-                    },
-                    tenant: {
-                        connect: { cognitoId: tenantCognitoId },
-                    }
-                }
-            });
-        }));
+        const newApplication = yield prisma.application.create({
+            data: {
+                applicationDate: new Date(applicationDate),
+                status,
+                property: { connect: { id: propertyId } },
+                tenant: { connect: { cognitoId: tenantCognitoId } },
+                name,
+                email,
+                phoneNumber,
+                message,
+            },
+        });
+        res.status(201).json(newApplication);
     }
     catch (error) {
-        res.status(500).json({ message: `Error in creating Application: ${error.message}` });
+        res.status(500).json({ message: `Error in creating application: ${error.message}` });
     }
 });
 exports.createApplication = createApplication;
@@ -128,7 +124,7 @@ const updateApplicationStatus = (req, res) => __awaiter(void 0, void 0, void 0, 
                     tenantCognitoId: application.tenantCognitoId,
                 },
             });
-            //upadte the property to connect teh tenant
+            // Update the property to connect the tenant
             yield prisma.property.update({
                 where: { id: application.propertyId },
                 data: {
@@ -137,8 +133,8 @@ const updateApplicationStatus = (req, res) => __awaiter(void 0, void 0, void 0, 
                     }
                 },
             });
-            //update the application with new lease id
-            yield prisma.application.update({
+            // Update the application with the new lease ID
+            const updatedApplication = yield prisma.application.update({
                 where: { id: Number(id) },
                 data: {
                     status,
@@ -150,15 +146,16 @@ const updateApplicationStatus = (req, res) => __awaiter(void 0, void 0, void 0, 
                     lease: true,
                 }
             });
+            res.json(updatedApplication);
         }
         else {
-            //update the application status (for both "denied" and othe status)
-            yield prisma.application.update({
+            // Update the application status (for "Denied" or other statuses)
+            const updatedApplication = yield prisma.application.update({
                 where: { id: Number(id) },
                 data: { status },
             });
+            res.json(updatedApplication);
         }
-        res.json(exports.updateApplicationStatus);
     }
     catch (error) {
         res.status(500).json({ message: `Error in updating application status: ${error.message}` });

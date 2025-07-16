@@ -81,7 +81,7 @@ const ApplicationModal = ({
               type="textarea"
               placeholder="Enter any additional information"
             />
-            <Button type="submit" className="bg-black text-white w-full">
+            <Button type="submit" className="bg-slate-700 text-white w-full">
               Submit Application
             </Button>
           </form>
